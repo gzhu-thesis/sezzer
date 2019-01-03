@@ -1,0 +1,51 @@
+s2e = {{
+    logging = {{
+        console = "debug",
+        logLevel = "debug",
+    }},
+    kleeArgs = {{ }},
+}}
+
+plugins = {{
+    "BaseInstructions",
+    "DrillerSearcher",
+    "HostFiles",
+    "LinuxMonitor",
+    "TestCaseGenerator",
+    "Vmi",
+}}
+
+pluginsConfig = {{ }}
+
+pluginsConfig.HostFiles = {{
+    baseDirs = {{
+          -- directory for the binary
+          "{PATH_BINARY}",
+          -- directory for the config, bootstrap
+          "{PATH_CONFIG}",
+          -- directory for the test input
+          "{PATH_INPUT}",
+          -- directory for the tools
+          "{PATH_TOOLS}",
+          -- directory for the shared libraries
+          "{PATH_LIB}",
+          "{PATH_FILE}",
+    }},
+    allowWrite = true,
+}}
+
+
+pluginsConfig.LinuxMonitor = {{
+    -- Kill the execution state when it encounters a segfault
+    terminateOnSegfault = true,
+
+    -- Kill the execution state when it encounters a trap
+    terminateOnTrap = true,
+}}
+
+pluginsConfig.TestCaseGenerator = {{
+    generateOnStateKill = true,
+    generateOnSegfault = true,
+    PathTestCases = "{PATH_TESTGEN}",
+}}
+

@@ -1,0 +1,34 @@
+#!/bin/bash
+
+echo -n "Enter the source mysql host: "
+read f_host
+echo -n "Enter the source mysql db: "
+read f_db
+echo -n "Enter the source mysql user: "
+read f_user
+echo -n "Enter the source mysql passwd: "
+read f_passwd
+
+echo -n "Enter the target postgres host: "
+read t_host
+echo -n "Enter the target postgres db: "
+read t_db
+echo -n "Enter the target postgres user: "
+read t_user
+echo -n "Enter the target postgres passwd: "
+read t_passwd
+
+cat << EOF > /tmp/convert.load
+LOAD DATABASE
+        FROM mysql://${f_user}:${f_passwd}@${f_host}/${f_db}
+        INTO postgresql://${t_user}:${t_passwd}@${t_host}/${t_db}
+
+ALTER SCHEMA '${f_db}' RENAME TO 'public'
+;
+EOF
+
+docker image pull dimitri/pgloader
+docker run --rm  \
+       -v /tmp/convert.load:/etc/convert.load \
+       -u root  dimitri/pgloader:latest \
+       pgloader -v /etc/convert.load

@@ -1,0 +1,44 @@
+#!/bin/bash
+
+S2EDIR="{_S2EDIR}"
+INSTALL_DIR="$S2EDIR/build/"
+
+# Comment this out to enable QEMU GUI
+GRAPHICS=-nographic
+
+DRIVE="-drive file=$S2EDIR/images/debian-8.7.1-{_ARCH}/image.raw.s2e,format=s2e,cache=writeback"
+
+export S2E_CONFIG="{_PATH}/analyze.lua"
+export S2E_OUTPUT_DIR="{_OUTPUT}/expdata"
+export S2E_SHARED_DIR=$INSTALL_DIR/share/libs2e
+export S2E_MAX_PROCESSES=1
+export S2E_UNBUFFERED_STREAM=1
+
+QEMU="$INSTALL_DIR/bin/qemu-system-{_ARCH}"
+LIBS2E="$INSTALL_DIR/share/libs2e/libs2e-{_ARCH}-s2e.so"
+
+
+# Usage: run_with_timeout N cmd args...
+#    or: run_with_timeout cmd args...
+# In the second case, cmd cannot be a number and the timeout will be 10 seconds.
+run_with_timeout () {{
+    local time=900
+    if [[ $1 =~ ^[0-9]+$ ]]; then time=$1; shift; fi
+    # Run in a subshell to avoid job control messages
+    ( "$@" &
+      child=$!
+      # Avoid default notification in non-interactive shell for SIGTERM
+      trap -- "" SIGTERM
+      ( sleep $time
+        kill -9 $child 2> /dev/null ) &
+      wait $child
+    )
+}}
+
+
+export LD_PRELOAD=$LIBS2E
+export LD_LIBRARY_PATH="$INSTALL_DIR/lib":$LD_LIBRARY_PATH
+run_with_timeout {_TIMEOUT} $QEMU $DRIVE \
+    -k en-us $GRAPHICS -monitor null -m 256M -enable-kvm \
+    -net none -net nic,model=e1000 \
+    -loadvm ready $*

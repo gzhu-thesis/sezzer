@@ -1,0 +1,83 @@
+s2e = {{
+    logging = {{
+        console = "{_DEBUG}",
+        logLevel = "{_DEBUG}",
+    }},
+    kleeArgs = {{ }},
+}}
+
+plugins = {{
+    "BaseInstructions",
+    "HostFiles",
+    "ForkLimiter",
+    "FunctionModels",
+    "MultiSearcher",
+    "CUPASearcher",
+    "LinuxMonitor",
+    "Vmi",
+    "ModuleExecutionDetector",
+    "TestCaseGenerator",
+}}
+
+pluginsConfig = {{ }}
+
+pluginsConfig.HostFiles = {{
+    baseDirs = {{
+          -- directory for the binary
+          "{PATH_BINARY}",
+          -- directory for the config, bootstrap
+          "{PATH_CONFIG}",
+          -- directory for the test input
+          "{PATH_INPUT}",
+          -- directory for the tools
+          "{PATH_TOOLS}",
+          -- directory for the shared libraries
+          "{PATH_LIB}",
+          "{PATH_FILE}",
+    }},
+    allowWrite = true,
+}}
+
+pluginsConfig.ForkLimiter = {{
+    maxForkCount = -1,
+    overallForkCount = 10,
+}}
+
+pluginsConfig.ModuleExecutionDetector = {{
+    mod_0 = {{
+        moduleName = "cb",
+        kernelMode = false,
+    }},
+}}
+
+-- add_plugin("ExecutionTracer")
+-- add_plugin("ModuleTracer")
+pluginsConfig.CUPASearcher = {{
+    -- The order of classes is important, please refer to the plugin
+    -- source code and documentation for details on how CUPA works.
+    classes = {{
+        -- A program under test may be composed of several binaries.
+        -- We want to give equal chance to all binaries, even if some of them
+        -- fork a lot more than others.
+        "pagedir",
+
+        -- Finally, group states by program counter at fork.
+        "pc",
+    }},
+    logLevel="info"
+}}
+
+pluginsConfig.LinuxMonitor = {{
+    -- Kill the execution state when it encounters a segfault
+    terminateOnSegfault = true,
+
+    -- Kill the execution state when it encounters a trap
+    terminateOnTrap = true,
+}}
+
+pluginsConfig.TestCaseGenerator = {{
+    generateOnStateKill = true,
+    generateOnSegfault = true,
+    PathTestCases = "{PATH_TESTGEN}",
+}}
+

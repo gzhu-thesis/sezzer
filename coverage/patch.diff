@@ -1,0 +1,112 @@
+diff --git a/accel/tcg/cpu-exec.c b/accel/tcg/cpu-exec.c
+index d84b01d..c237cd0 100644
+--- a/accel/tcg/cpu-exec.c
++++ b/accel/tcg/cpu-exec.c
+@@ -149,6 +149,9 @@ static inline tcg_target_ulong cpu_tb_exec(CPUState *cpu, TranslationBlock *itb)
+                            itb->tc_ptr, cpu->cpu_index, itb->pc,
+                            lookup_symbol(itb->pc));
+ 
++    qemu_log_mask(CPU_LOG_TB,
++                           TARGET_FMT_lx ":" TARGET_FMT_lx "\n",
++                           itb->pc, itb->pc+itb->size);
+ #if defined(DEBUG_DISAS)
+     if (qemu_loglevel_mask(CPU_LOG_TB_CPU)
+         && qemu_log_in_addr_range(itb->pc)) {
+diff --git a/include/qemu/log.h b/include/qemu/log.h
+index a50e994..d8ca5f8 100644
+--- a/include/qemu/log.h
++++ b/include/qemu/log.h
+@@ -43,6 +43,7 @@ static inline bool qemu_log_separate(void)
+ #define CPU_LOG_PAGE       (1 << 14)
+ #define LOG_TRACE          (1 << 15)
+ #define CPU_LOG_TB_OP_IND  (1 << 16)
++#define CPU_LOG_TB         (1 << 17)
+ 
+ /* Returns true if a bit is set in the current loglevel mask
+  */
+diff --git a/linux-user/syscall.c b/linux-user/syscall.c
+index 9b6364a..a03e2cb 100644
+--- a/linux-user/syscall.c
++++ b/linux-user/syscall.c
+@@ -7689,6 +7689,56 @@ static TargetFdTrans target_inotify_trans = {
+ };
+ #endif
+ 
++
++static int trace_self_maps(void *cpu_env)
++{
++    CPUState *cpu = ENV_GET_CPU((CPUArchState *)cpu_env);
++    TaskState *ts = cpu->opaque;
++    FILE *fp;
++    char *line = NULL;
++    size_t len = 0;
++    ssize_t read;
++
++    fp = fopen("/proc/self/maps", "r");
++    if (fp == NULL) {
++        return -EACCES;
++    }
++
++    while ((read = getline(&line, &len, fp)) != -1) {
++        int fields, dev_maj, dev_min, inode;
++        uint64_t min, max, offset;
++        char flag_r, flag_w, flag_x, flag_p;
++        char path[512] = "";
++        fields = sscanf(line, "%"PRIx64"-%"PRIx64" %c%c%c%c %"PRIx64" %x:%x %d"
++                        " %512s", &min, &max, &flag_r, &flag_w, &flag_x,
++                        &flag_p, &offset, &dev_maj, &dev_min, &inode, path);
++
++        if ((fields < 10) || (fields > 11)) {
++            continue;
++        }
++        if (h2g_valid(min)) {
++            int flags = page_get_flags(h2g(min));
++            max = h2g_valid(max - 1) ? max : (uintptr_t)g2h(GUEST_ADDR_MAX);
++            if (page_check_range(h2g(min), max - min, flags) == -1) {
++                continue;
++            }
++            if (h2g(min) == ts->info->stack_limit) {
++                pstrcpy(path, sizeof(path), "      [stack]");
++            }
++
++            qemu_log(TARGET_ABI_FMT_lx ":" TARGET_ABI_FMT_lx ":%s%s\n", h2g(min), h2g(max - 1) + 1,
++                    path[0] ? "         " : "", path);
++        }
++    }
++
++    free(line);
++    fclose(fp);
++
++    return 0;
++}
++
++
++
+ /* do_syscall() should always have a single exit point at the end so
+    that actions, such as logging of syscall results, can be performed.
+    All errnos that do_syscall() returns must be -TARGET_<errcode>. */
+@@ -9240,6 +9290,11 @@ abi_long do_syscall(void *cpu_env, int num, abi_long arg1,
+                                     target_to_host_bitmask(arg4, mmap_flags_tbl),
+                                     arg5,
+                                     arg6));
++        if (qemu_loglevel_mask(CPU_LOG_TB)) {
++          qemu_log("++++++++++\n");
++          trace_self_maps(cpu_env);
++          qemu_log("----------\n");
++        }
+ #endif
+         break;
+ #endif
+diff --git a/util/log.c b/util/log.c
+index 96f30dd..b2c120d 100644
+--- a/util/log.c
++++ b/util/log.c
+@@ -272,6 +272,8 @@ const QEMULogItem qemu_log_items[] = {
+     { CPU_LOG_TB_NOCHAIN, "nochain",
+       "do not chain compiled TBs so that \"exec\" and \"cpu\" show\n"
+       "complete traces" },
++    { CPU_LOG_TB, "tb",
++      "show translation blocks' start and end address" },
+     { 0, NULL, NULL },
+ };
+ 

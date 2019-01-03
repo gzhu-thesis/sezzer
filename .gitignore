@@ -1,0 +1,6 @@
+**/s2e
+**/test
+*.pyc
+*/DockerImage/*.tar
+*/vm/*
+

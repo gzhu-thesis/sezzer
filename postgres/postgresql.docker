@@ -1,0 +1,191 @@
+#!/bin/bash
+
+set -e
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+echo $DIR
+CUSTOM_CONFIG="postgresql.conf"
+SCHEMA="01_schema.sql"
+DATA="02_data.sql"
+
+function confirm {
+    [[ "$2" = true ]] && LABEL="(Y/n)" || LABEL="(y/N)"
+    [[ "$2" = true ]] && DEFAULT="Y" || DEFAULT="N"
+
+    read -p "Do you want to setup ${1}?  ${LABEL} : " ${1}
+    while [[ ! "${!1}" =~ ^(y|Y|n|N|yes|no|YES|NO|"")$ ]]; do
+        read -p "Do you want to setup ${1}?  ${LABEL} : " ${1}
+    done
+
+    [[ -z "${!1}" ]] && eval ${1}="$DEFAULT" || :
+}
+
+function input {
+    [[ ! -z "$2" ]] && DEFAULT="${2}" || ( echo "need a default when calling input function"; exit 1 )
+    read -p "Please specify ${1}  [${DEFAULT}] : " ${1}
+    [[ -z "${!1}" ]] && eval ${1}="$DEFAULT" || :
+}
+
+command_exists() {
+    command -v "$@" > /dev/null 2>&1
+}
+
+
+echo "===================================================================================================="
+echo "Please finish the setup process before proceed"
+echo "===================================================================================================="
+
+# input function will create variables with the name of $1
+input "POSTGRES_CONTAINER_NAME" "postgres_cyimmu"
+input "POSTGRES_DB" "cyimmu"
+input "POSTGRES_USER" "postgres"
+input "POSTGRES_PASSWORD" "postgres"
+input "POSTGRES_BINDING_IP" "127.0.0.1"
+input "POSTGRES_BINDING_PORT" "5432"
+input "PGADMIN4_BINDING_IP" "0.0.0.0"
+input "PGADMIN4_BINDING_PORT" "5050"
+
+# # pgadmin4
+# confirm "PGADMIN_DOCKER" true
+
+# if [[ "${PGADMIN_DOCKER}" =~ ^(y|Y|yes|YES)$ ]];then
+#     input "PGADMIN4_CONTAINER_NAME" "pgadmin4"
+#     input "PGADMIN4_BINDING_PORT" "5050"
+# fi
+
+
+###############################################################################################################
+cd ${DIR}
+
+[[ -x "$(command -v dig)" ]] && IP="$(dig +short myip.opendns.com @resolver1.opendns.com)" || IP="127.0.0.1"
+
+if command_exists docker; then
+    FOUND_DOCKER=true
+else
+    FOUND_DOCKER=false
+fi
+
+INSTALL_DOCKER=false
+if [[ "${FOUND_DOCKER}" = false ]]; then
+    confirm "INSTALL_DOCKER" true
+fi
+
+if [[ "${INSTALL_DOCKER}" =~ ^(y|Y|yes|YES)$ ]]; then
+    echo ""
+    echo "===================================================================================================="
+    echo "Installing docker-ce with apt-get, this requires sudo privilege"
+    echo "===================================================================================================="
+    if command_exists sudo; then
+    # requires sudo
+        sh_c='sudo -E sh -c'
+    elif command_exists su; then
+        sh_c='su -c'
+    else
+        echo 'unable to find either "sudo" or "su"'
+        exit 1
+    fi
+
+    # install prepreqs
+    pre_reqs="apt-transport-https ca-certificates curl software-properties-common gnupg"
+    $sh_c "apt-get update -qq >/dev/null"
+    $sh_c "apt-get install -y -qq $pre_reqs >/dev/null"
+
+    # install Docker's official GPG key
+    DOWNLOAD_URL="https://download.docker.com"
+    $sh_c "curl -fsSL \"$DOWNLOAD_URL/linux/ubuntu/gpg\" | apt-key add -qq - >/dev/null"
+
+    # add official repository to apt list
+    $sh_c "echo \"$apt_repo\" > /etc/apt/sources.list.d/docker.list"
+    $sh_c "add-apt-repository \"deb [arch=amd64] $DOWNLOAD_URL/linux/ubuntu $(lsb_release -cs) stable\""
+
+    # install
+    $sh_c "apt-get update -qq >/dev/null"
+    $sh_c "apt-get install -y -qq --no-install-recommends docker-ce >/dev/null"
+fi
+
+if id -nG "$USER" | grep -qw docker; then
+    DOCKER="docker"
+else
+    DOCKER="sudo docker"
+fi
+
+echo "docker command: ${DOCKER}"
+# echo "${IP}"
+
+
+echo ""
+echo "===================================================================================================="
+echo "Attempting to pull the latest official postgresql docker image from docker hub"
+echo "===================================================================================================="
+${DOCKER} pull postgres:latest
+
+echo "===================================================================================================="
+echo "Building pgadmin4 docker image with Dockerfile"
+echo "===================================================================================================="
+IMAGE="postgres_cyimmu"
+${DOCKER} build -t ${IMAGE} .
+
+# if [[ "${PGADMIN_DOCKER}" =~ ^(y|Y|yes|YES)$ ]];then
+#     echo ""
+#     echo "===================================================================================================="
+#     echo "Building pgadmin4 docker image with Dockerfile"
+#     echo "===================================================================================================="
+#     ${DOCKER} build -t pgadmin4 -f pgadmin4.Dockerfile .
+# fi
+
+
+# echo ""
+# echo "===================================================================================================="
+# echo "Creating user-defined docker network for postgres and pgadmin4"
+# echo "===================================================================================================="
+
+# docker network create --driver=bridge --subnet=172.99.0.0/16 --gateway=172.99.0.1 db_nw
+
+
+echo ""
+echo "===================================================================================================="
+echo "Launching postgresql docker container"
+echo "===================================================================================================="
+
+set +e
+${DOCKER} container stop ${POSTGRES_CONTAINER_NAME} >/dev/null 2>&1;
+${DOCKRE} container rm ${POSTGRES_CONTAINER_NAME} >/dev/null 2>&1;
+set -e
+
+${DOCKER} run \
+    --name "${POSTGRES_CONTAINER_NAME}" \
+    -e POSTGRES_DB="${POSTGRES_DB}"  \
+    -e POSTGRES_USER="${POSTGRES_USER}" \
+    -e POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"  \
+    -v "${DIR}/${CUSTOM_CONFIG}":"/etc/${CUSTOM_CONFIG}" \
+    -v "${DIR}/${SCHEMA}":"/docker-entrypoint-initdb.d/${SCHEMA}" \
+    -v "${DIR}/${DATA}":"/docker-entrypoint-initdb.d/${DATA}" \
+    --restart=always \
+    -p "${POSTGRES_BINDING_IP}":"${POSTGRES_BINDING_PORT}":5432 \
+    -p "${PGADMIN4_BINDING_IP}":"${PGADMIN4_BINDING_PORT}":5050 \
+    -d ${IMAGE}
+
+echo "Docker container ${IMAGE} started, you can access the container via container name [${POSTGRES_CONTAINER_NAME}]"
+echo "The postgresql service is mapped to port [${POSTGRES_BINDING_PORT}] on [${POSTGRES_BINDING_IP}]"
+echo "The pgadmin4 service is mapped to port [${PGADMIN4_BINDING_PORT}] on [${PGADMIN4_BINDING_IP}]"
+
+
+# if [[ "${PGADMIN_DOCKER}" =~ ^(y|Y|yes|YES)$ ]];then
+#     echo ""
+#     echo "===================================================================================================="
+#     echo "Launching pgadmin4 container"
+#     echo "===================================================================================================="
+#     ${DOCKER} run \
+#         --name "${PGADMIN4_CONTAINER_NAME}" \
+#         --net db_nw \
+#         -e PG_DB="${POSTGRES_DB}"  \
+#         -e PG_USER="${POSTGRES_USER}" \
+#         -e PG_PASSWD="${POSTGRES_PASSWORD}"  \
+#         --ip 172.99.0.101 \
+#         --restart=always \
+#         -p 127.0.0.1:"${PGADMIN4_BINDING_PORT}":5050 \
+#         -d pgadmin4
+
+#     echo "pgadmin4 container started, you can access container via docker container name [${PGADMIN4_CONTAINER_NAME}]"
+#     echo "The pgadmin4 service is mapped to port [${PGADMIN4_BINDING_PORT}] on [${IP}]"
+# fi

@@ -1,0 +1,65 @@
+s2e = {{
+    logging = {{
+        console = "{_DEBUG}",
+        logLevel = "{_DEBUG}",
+    }},
+    kleeArgs = {{ }},
+}}
+
+plugins = {{
+    "BaseInstructions",
+    "ConcolicExploreSearcher",
+    "HostFiles",
+    "FunctionModels",
+    "LinuxMonitor",
+    "Vmi",
+    "ModuleExecutionDetector",
+    "TestCaseGenerator",
+}}
+
+pluginsConfig = {{ }}
+
+pluginsConfig.ModuleExecutionDetector = {{
+{MODULES}
+}}
+
+pluginsConfig.ConcolicExploreSearcher = {{
+    PathTestCases = "{PATH_TESTGEN}",
+    TotalTbs = "{TOTAL_TBS}",
+    PathBBLog = "{PATH_BBLOG}",
+    IdxInput = "{IDX_INPUT}",
+    BasicBlocks = {{{ENTRIES}}},
+    GenConstraint = false;
+}}
+
+
+pluginsConfig.HostFiles = {{
+    baseDirs = {{
+          -- directory for the binary
+          "{PATH_BINARY}",
+          -- directory for the config, bootstrap
+          "{PATH_CONFIG}",
+          -- directory for the test input
+          "{PATH_INPUT}",
+          -- directory for the tools
+          "{PATH_TOOLS}",
+          -- directory for the shared libraries
+          "{PATH_LIB}",
+          "{PATH_FILE}",
+    }},
+    allowWrite = true,
+}}
+
+pluginsConfig.LinuxMonitor = {{
+    -- Kill the execution state when it encounters a segfault
+    terminateOnSegfault = true,
+
+    -- Kill the execution state when it encounters a trap
+    terminateOnTrap = true,
+}}
+
+pluginsConfig.TestCaseGenerator = {{
+    generateOnStateKill = true,
+    generateOnSegfault = true,
+    PathTestCases = "{PATH_TESTGEN}",
+}}
